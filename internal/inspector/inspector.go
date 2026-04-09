@@ -1,5 +1,5 @@
 // Package inspector provides functionality for analyzing .env file contents
-// and producing a summary report of key statistics.
+// and producing a summary report of key types, sensitive fields, and statistics.
 package inspector
 
 import (
@@ -7,62 +7,66 @@ import (
 	"strconv"
 	"strings"
 
-	"envoy-cli/internal/envfile"
-	"envoy-cli/internal/masker"
+	"github.com/user/envoy-cli/internal/envfile"
+	"github.com/user/envoy-cli/internal/masker"
 )
 
-// Report holds the result of inspecting a set of env entries.
+// Report holds the results of inspecting an env file.
 type Report struct {
-	TotalKeys    int
+	TotalKeys     int
+	EmptyValues   int
 	SensitiveKeys []string
-	EmptyValues  int
-	URLValues    int
-	BooleanValues int
-	NumericValues int
-	Keys         []string
+	URLKeys       []string
+	BooleanKeys   []string
+	NumericKeys   []string
+	Keys          []string
 }
 
-// Inspect analyses the provided entries and returns a Report.
-// If m is nil, no sensitive-key detection is performed.
+// Inspect analyses a slice of envfile.Entry values and returns a Report.
+// If m is nil, sensitive key detection is skipped.
 func Inspect(entries []envfile.Entry, m *masker.Masker) Report {
 	r := Report{}
+
 	for _, e := range entries {
+		if e.Key == "" {
+			continue
+		}
+
 		r.TotalKeys++
 		r.Keys = append(r.Keys, e.Key)
 
 		if e.Value == "" {
 			r.EmptyValues++
 		}
-		if isURL(e.Value) {
-			r.URLValues++
-		}
-		if isBoolean(e.Value) {
-			r.BooleanValues++
-		}
-		if isNumeric(e.Value) {
-			r.NumericValues++
-		}
+
 		if m != nil && m.IsSensitive(e.Key) {
 			r.SensitiveKeys = append(r.SensitiveKeys, e.Key)
 		}
+
+		switch {
+		case isURL(e.Value):
+			r.URLKeys = append(r.URLKeys, e.Key)
+		case isBoolean(e.Value):
+			r.BooleanKeys = append(r.BooleanKeys, e.Key)
+		case isNumeric(e.Value):
+			r.NumericKeys = append(r.NumericKeys, e.Key)
+		}
 	}
+
 	return r
 }
 
 func isURL(v string) bool {
-	if v == "" {
+	if !strings.Contains(v, "://") {
 		return false
 	}
 	u, err := url.ParseRequestURI(v)
-	return err == nil && strings.HasPrefix(u.Scheme, "http")
+	return err == nil && u.Scheme != "" && u.Host != ""
 }
 
 func isBoolean(v string) bool {
-	switch strings.ToLower(v) {
-	case "true", "false", "yes", "no", "1", "0":
-		return true
-	}
-	return false
+	lower := strings.ToLower(v)
+	return lower == "true" || lower == "false" || lower == "yes" || lower == "no" || lower == "1" || lower == "0"
 }
 
 func isNumeric(v string) bool {
