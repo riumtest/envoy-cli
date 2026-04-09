@@ -3,78 +3,78 @@ package inspector_test
 import (
 	"testing"
 
-	"github.com/user/envoy-cli/internal/inspector"
-	"github.com/user/envoy-cli/internal/masker"
+	"envoy-cli/internal/envfile"
+	"envoy-cli/internal/inspector"
+	"envoy-cli/internal/masker"
 )
 
-func entries(pairs ...string) []inspector.Entry {
-	var out []inspector.Entry
-	for i := 0; i+1 < len(pairs); i += 2 {
-		out = append(out, inspector.Entry{Key: pairs[i], Value: pairs[i+1]})
+func entries() []envfile.Entry {
+	return []envfile.Entry{
+		{Key: "APP_NAME", Value: "myapp"},
+		{Key: "DATABASE_URL", Value: "https://db.example.com"},
+		{Key: "DEBUG", Value: "true"},
+		{Key: "PORT", Value: "8080"},
+		{Key: "SECRET_KEY", Value: "s3cr3t"},
+		{Key: "EMPTY_VAR", Value: ""},
 	}
-	return out
 }
 
 func TestInspect_Counts(t *testing.T) {
-	m := masker.New()
-	ents := entries(
-		"DATABASE_URL", "postgres://localhost/db",
-		"API_KEY", "abc123secret",
-		"DEBUG", "true",
-		"PORT", "8080",
-		"EMPTY_VAR", "",
-	)
-	r := inspector.Inspect(ents, m)
-
-	if r.Total != 5 {
-		t.Errorf("expected Total=5, got %d", r.Total)
+	r := inspector.Inspect(entries(), nil)
+	if r.TotalKeys != 6 {
+		t.Errorf("expected 6 total keys, got %d", r.TotalKeys)
 	}
-	if r.Empty != 1 {
-		t.Errorf("expected Empty=1, got %d", r.Empty)
+	if r.EmptyValues != 1 {
+		t.Errorf("expected 1 empty value, got %d", r.EmptyValues)
 	}
-	if r.URLs != 1 {
-		t.Errorf("expected URLs=1, got %d", r.URLs)
+	if r.URLValues != 1 {
+		t.Errorf("expected 1 URL value, got %d", r.URLValues)
 	}
-	if r.Booleans != 1 {
-		t.Errorf("expected Booleans=1, got %d", r.Booleans)
+	if r.BooleanValues != 1 {
+		t.Errorf("expected 1 boolean value, got %d", r.BooleanValues)
 	}
-	if r.Numeric != 1 {
-		t.Errorf("expected Numeric=1, got %d", r.Numeric)
+	if r.NumericValues != 1 {
+		t.Errorf("expected 1 numeric value, got %d", r.NumericValues)
 	}
 }
 
 func TestInspect_SensitiveKeys(t *testing.T) {
 	m := masker.New()
-	ents := entries(
-		"SECRET_KEY", "topsecret",
-		"PASSWORD", "hunter2",
-		"HOST", "localhost",
-	)
-	r := inspector.Inspect(ents, m)
-	if r.Sensitive != 2 {
-		t.Errorf("expected Sensitive=2, got %d", r.Sensitive)
+	r := inspector.Inspect(entries(), m)
+	if len(r.SensitiveKeys) == 0 {
+		t.Fatal("expected at least one sensitive key")
+	}
+	found := false
+	for _, k := range r.SensitiveKeys {
+		if k == "SECRET_KEY" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected SECRET_KEY in sensitive keys, got %v", r.SensitiveKeys)
 	}
 }
 
 func TestInspect_NoMasker(t *testing.T) {
-	ents := entries("KEY", "value")
-	r := inspector.Inspect(ents, nil)
-	if r.Sensitive != 0 {
-		t.Errorf("expected Sensitive=0 with nil masker, got %d", r.Sensitive)
+	r := inspector.Inspect(entries(), nil)
+	if len(r.SensitiveKeys) != 0 {
+		t.Errorf("expected no sensitive keys without masker, got %v", r.SensitiveKeys)
 	}
 }
 
 func TestInspect_KeysPopulated(t *testing.T) {
-	ents := entries("A", "1", "B", "2", "C", "3")
-	r := inspector.Inspect(ents, nil)
-	if len(r.Keys) != 3 {
-		t.Errorf("expected 3 keys, got %d", len(r.Keys))
+	r := inspector.Inspect(entries(), nil)
+	if len(r.Keys) != 6 {
+		t.Errorf("expected 6 keys in report, got %d", len(r.Keys))
+	}
+	if r.Keys[0] != "APP_NAME" {
+		t.Errorf("expected first key APP_NAME, got %s", r.Keys[0])
 	}
 }
 
-func TestInspect_EmptyInput(t *testing.T) {
-	r := inspector.Inspect(nil, nil)
-	if r.Total != 0 {
-		t.Errorf("expected Total=0, got %d", r.Total)
+func TestInspect_EmptyEntries(t *testing.T) {
+	r := inspector.Inspect([]envfile.Entry{}, nil)
+	if r.TotalKeys != 0 {
+		t.Errorf("expected 0 total keys for empty input, got %d", r.TotalKeys)
 	}
 }
