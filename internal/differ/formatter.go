@@ -55,7 +55,9 @@ func (f *TextFormatter) Format(result *Result) string {
 	return builder.String()
 }
 
-// maskValue masks a value for secret protection
+// maskValue masks a value for secret protection.
+// Values of 4 characters or fewer are fully masked. Longer values
+// retain the first 2 and last 2 characters to aid identification.
 func maskValue(value string) string {
 	if len(value) == 0 {
 		return ""
@@ -81,4 +83,18 @@ func (f *JSONFormatter) Format(result *Result) string {
 	builder.WriteString(fmt.Sprintf("  \"summary\": \"%s\"\n", result.Summary()))
 	builder.WriteString("}\n")
 	return builder.String()
+}
+
+// NewFormatter returns a Formatter implementation for the given format name.
+// Supported values are "text" and "json". If the format is unrecognised,
+// NewFormatter falls back to TextFormatter and returns an error.
+func NewFormatter(format string, maskSecrets bool) (Formatter, error) {
+	switch strings.ToLower(format) {
+	case "text", "":
+		return &TextFormatter{MaskSecrets: maskSecrets}, nil
+	case "json":
+		return &JSONFormatter{MaskSecrets: maskSecrets}, nil
+	default:
+		return &TextFormatter{MaskSecrets: maskSecrets}, fmt.Errorf("unknown formatter %q, falling back to text", format)
+	}
 }
