@@ -77,3 +77,18 @@ func TestWrite_JSON(t *testing.T) {
 		t.Errorf("expected JSON value myapp, got:\n%s", out)
 	}
 }
+
+func TestWrite_EmptyEntries(t *testing.T) {
+	formats := []exporter.Format{
+		exporter.FormatDotEnv,
+		exporter.FormatExport,
+		exporter.FormatJSON,
+	}
+	for _, format := range formats {
+		var buf bytes.Buffer
+		err := exporter.Write(&buf, []envfile.Entry{}, exporter.Options{Format: format})
+		if err != nil {
+			t.Errorf("format %v: unexpected error for empty entries: %v", format, err)
+		}
+	}
+}
