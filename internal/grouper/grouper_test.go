@@ -90,3 +90,18 @@ func TestGroupByPrefix_CustomDelimiter(t *testing.T) {
 		t.Errorf("expected 1 dev entry, got %d", len(m["dev"]))
 	}
 }
+
+func TestGroupByPrefix_TotalEntryCount(t *testing.T) {
+	// Verify that grouping does not drop or duplicate any entries.
+	input := entries()
+	groups := grouper.GroupByPrefix(input, grouper.DefaultOptions())
+
+	total := 0
+	for _, g := range groups {
+		total += len(g.Entries)
+	}
+
+	if total != len(input) {
+		t.Errorf("expected total entry count %d across all groups, got %d", len(input), total)
+	}
+}
