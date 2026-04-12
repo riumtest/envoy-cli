@@ -60,6 +60,15 @@ func TestStrip_TrimWhitespace(t *testing.T) {
 	}
 }
 
+func TestStrip_EmptyInput(t *testing.T) {
+	input := []envfile.Entry{}
+	opts := stripper.DefaultOptions()
+	result := stripper.Strip(input, opts)
+	if len(result) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(result))
+	}
+}
+
 func TestStripRaw_RemovesCommentLines(t *testing.T) {
 	input := "# comment\nAPP=1\n# another\nDEBUG=true"
 	opts := stripper.DefaultOptions()
@@ -84,5 +93,14 @@ func TestStripRaw_NoStrip(t *testing.T) {
 	result := stripper.StripRaw(input, opts)
 	if result != input {
 		t.Errorf("expected unchanged content, got %q", result)
+	}
+}
+
+func TestStripRaw_EmptyString(t *testing.T) {
+	input := ""
+	opts := stripper.DefaultOptions()
+	result := stripper.StripRaw(input, opts)
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
 	}
 }
