@@ -1,98 +1,82 @@
 package differ
 
 import (
-	"fmt"
-	"sort"
+	"github.com/envoy-cli/envoy-cli/internal/envfile"
 )
 
-// DiffType represents the type of difference between env files
-type DiffType string
+// ChangeType represents the kind of change between two env files.
+type ChangeType string
 
 const (
-	DiffTypeAdded   DiffType = "added"
-	DiffTypeRemoved DiffType = "removed"
-	DiffTypeChanged DiffType = "changed"
+	Added   ChangeType = "added"
+	Removed ChangeType = "removed"
+	Changed ChangeType = "changed"
+	Unchanged ChangeType = "unchanged"
 )
 
-// Difference represents a single difference between two env files
-type Difference struct {
+// Change represents a single key-level difference.
+type Change struct {
 	Key      string
-	Type     DiffType
 	OldValue string
 	NewValue string
+	Type     ChangeType
 }
 
-// Result contains all differences between two env files
+// Result holds the full diff output.
 type Result struct {
-	Differences []Difference
+	Changes []Change
 }
 
-// HasChanges returns true if there are any differences
-func (r *Result) HasChanges() bool {
-	return len(r.Differences) > 0
-}
-
-// Compare compares two environment variable maps and returns differences
-func Compare(source, target map[string]string) *Result {
-	result := &Result{
-		Differences: []Difference{},
+// Summary returns counts of each change type.
+func (r *Result) Summary() map[ChangeType]int {
+	counts := map[ChangeType]int{
+		Added:     0,
+		Removed:   0,
+		Changed:   0,
+		Unchanged: 0,
 	}
+	for _, c := range r.Changes {
+		counts[c.Type]++
+	}
+	return counts
+}
 
-	// Find added and changed keys
-	for key, targetValue := range target {
-		sourceValue, exists := source[key]
-		if !exists {
-			result.Differences = append(result.Differences, Difference{
-				Key:      key,
-				Type:     DiffTypeAdded,
-				NewValue: targetValue,
-			})
-		} else if sourceValue != targetValue {
-			result.Differences = append(result.Differences, Difference{
-				Key:      key,
-				Type:     DiffTypeChanged,
-				OldValue: sourceValue,
-				NewValue: targetValue,
-			})
+// Compare diffs two slices of envfile.Entry and returns a Result.
+func Compare(base, target []envfile.Entry) *Result {
+	baseMap := toMap(base)
+	targetMap := toMap(target)
+
+	seen := map[string]bool{}
+	var changes []Change
+
+	for _, e := range base {
+		seen[e.Key] = true
+		if newVal, ok := targetMap[e.Key]; ok {
+			if newVal != e.Value {
+				changes = append(changes, Change{Key: e.Key, OldValue: e.Value, NewValue: newVal, Type: Changed})
+			} else {
+				changes = append(changes, Change{Key: e.Key, OldValue: e.Value, NewValue: newVal, Type: Unchanged})
+			}
+		} else {
+			changes = append(changes, Change{Key: e.Key, OldValue: e.Value, NewValue: "", Type: Removed})
 		}
 	}
 
-	// Find removed keys
-	for key, sourceValue := range source {
-		if _, exists := target[key]; !exists {
-			result.Differences = append(result.Differences, Difference{
-				Key:      key,
-				Type:     DiffTypeRemoved,
-				OldValue: sourceValue,
-			})
+	for _, e := range target {
+		if !seen[e.Key] {
+			if _, exists := baseMap[e.Key]; !exists {
+				changes = append(changes, Change{Key: e.Key, OldValue: "", NewValue: e.Value, Type: Added})
+			}
 		}
 	}
 
-	// Sort differences by key for consistent output
-	sort.Slice(result.Differences, func(i, j int) bool {
-		return result.Differences[i].Key < result.Differences[j].Key
-	})
-
-	return result
+	return &Result{Changes: changes}
 }
 
-// Summary returns a human-readable summary of the differences
-func (r *Result) Summary() string {
-	if !r.HasChanges() {
-		return "No differences found"
+func toMap(entries []envfile.Entry) map[string]string {
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Key] = e.Value
 	}
-
-	added, removed, changed := 0, 0, 0
-	for _, diff := range r.Differences {
-		switch diff.Type {
-		case DiffTypeAdded:
-			added++
-		case DiffTypeRemoved:
-			removed++
-		case DiffTypeChanged:
-			changed++
-		}
-	}
-
-	return fmt.Sprintf("%d added, %d removed, %d changed", added, removed, changed)
+	return m
 }
