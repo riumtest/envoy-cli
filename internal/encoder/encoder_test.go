@@ -68,6 +68,25 @@ func TestEncode_UnsupportedFormat(t *testing.T) {
 	}
 }
 
+func TestEncode_MultipleEntries(t *testing.T) {
+	input := entries("A", "foo", "B", "bar", "C", "baz")
+	results, err := Encode(input, FormatBase64)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	for i, r := range results {
+		if r.Key != input[i].Key {
+			t.Errorf("result[%d]: expected key %q, got %q", i, input[i].Key, r.Key)
+		}
+		if r.Original != input[i].Value {
+			t.Errorf("result[%d]: expected original %q, got %q", i, input[i].Value, r.Original)
+		}
+	}
+}
+
 func TestToEntries(t *testing.T) {
 	results := []Result{
 		{Key: "A", Original: "foo", Encoded: "Zm9v", Format: FormatBase64},
