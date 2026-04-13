@@ -3,8 +3,6 @@
 package cloner
 
 import (
-	"fmt"
-
 	"envoy-cli/internal/envfile"
 )
 
@@ -67,14 +65,17 @@ func Clone(dst, src []envfile.Entry, opts Options) (Result, error) {
 		}
 	}
 
-	_ = fmt.Sprintf // keep fmt imported for future use
-
 	return Result{
 		Entries:  out,
 		Cloned:   cloned,
 		Skipped:  skipped,
 		Conflict: conflict,
 	}, nil
+}
+
+// Summary returns a human-readable description of the clone result.
+func (r Result) Summary() string {
+	return fmt.Sprintf("cloned %d, skipped %d, conflicts %d", r.Cloned, r.Skipped, r.Conflict)
 }
 
 func buildAllowlist(keys []string) map[string]bool {
