@@ -1,23 +1,13 @@
-// Package masker provides key-based secret detection and value masking
-// for environment variable processing in envoy-cli.
+// Package masker provides utilities for detecting and masking sensitive
+// environment variable values based on key name patterns.
 //
-// A Masker inspects environment variable keys against a configurable list
-// of sensitive patterns (e.g. "SECRET", "PASSWORD", "TOKEN") and replaces
-// matching values with a redaction string before they are displayed or
-// written to output.
+// A Masker can be created with default patterns (which cover common secrets
+// such as passwords, tokens, and API keys) or with custom patterns.
 //
-// Basic usage:
+// Example usage:
 //
 //	m := masker.New()
-//
-//	// Check whether a key is sensitive.
-//	if m.IsSensitive("DB_PASSWORD") {
-//		fmt.Println("this key is sensitive")
+//	if m.IsSensitive("DATABASE_PASSWORD") {
+//		fmt.Println(m.Mask("DATABASE_PASSWORD", "s3cr3t"))
 //	}
-//
-//	// Mask a value — returns "****" for sensitive keys, original otherwise.
-//	display := m.Mask("DB_PASSWORD", "s3cr3t") // → "****"
-//	display  = m.Mask("APP_ENV",    "prod")    // → "prod"
-//
-// Custom patterns and mask strings can be supplied via NewWithPatterns.
 package masker
