@@ -19,6 +19,7 @@ type Report struct {
 	BooleanValues int      `json:"boolean_values"`
 	URLValues     int      `json:"url_values"`
 	UniqueKeys    int      `json:"unique_keys"`
+	DuplicateKeys int      `json:"duplicate_keys"`
 }
 
 var sensitivePattern = regexp.MustCompile(`(?i)(secret|password|passwd|token|api_?key|private|credential|auth)`)
@@ -35,6 +36,8 @@ func Summarize(entries []envfile.Entry) Report {
 		if _, dup := seen[e.Key]; !dup {
 			seen[e.Key] = struct{}{}
 			report.UniqueKeys++
+		} else {
+			report.DuplicateKeys++
 		}
 
 		if e.Value == "" {
