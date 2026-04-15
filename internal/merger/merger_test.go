@@ -96,3 +96,22 @@ func TestMerge_MissingFileInOrder(t *testing.T) {
 		t.Errorf("expected 1 entry, got %d", len(result.Entries))
 	}
 }
+
+func TestMerge_EmptyFiles(t *testing.T) {
+	files := map[string][]envfile.Entry{
+		"a.env": entries(),
+		"b.env": entries(),
+	}
+	order := []string{"a.env", "b.env"}
+
+	result, err := merger.Merge(files, order, merger.StrategyFirst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(result.Entries))
+	}
+	if len(result.Conflicts) != 0 {
+		t.Errorf("expected 0 conflicts, got %d", len(result.Conflicts))
+	}
+}
