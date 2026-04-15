@@ -1,79 +1,82 @@
-// Package differ compares two sets of env entries and reports differences.
+// Package differ compares two sets of env entries and produces structured diffs.
 package differ
 
 import (
-	"github.com/user/envoy-cli/internal/envfile"
+	"sort"
+
+	"envoy-cli/internal/envfile"
 )
 
-// ChangeKind describes the type of change detected between two env files.
-type ChangeKind string
+// ChangeType represents the kind of change detected between two env files.
+type ChangeType string
 
 const (
-	Added   ChangeKind = "added"
-	Removed ChangeKind = "removed"
-	Changed ChangeKind = "changed"
-	Unchanged ChangeKind = "unchanged"
+	Added   ChangeType = "added"
+	Removed ChangeType = "removed"
+	Changed ChangeType = "changed"
+	Unchanged ChangeType = "unchanged"
 )
 
-// Change represents a single key-level diff between two env files.
-type Change struct {
+// Diff represents a single key-level difference.
+type Diff struct {
 	Key      string
-	Kind     ChangeKind
 	OldValue string
 	NewValue string
+	Change   ChangeType
 }
 
-// Result holds the full diff output.
+// Result holds the full comparison output.
 type Result struct {
-	Changes []Change
+	Diffs []Diff
 }
 
-// HasDiff returns true if any non-unchanged entries exist.
-func (r Result) HasDiff() bool {
-	for _, c := range r.Changes {
-		if c.Kind != Unchanged {
+// HasChanges returns true if any non-unchanged diffs exist.
+func (r Result) HasChanges() bool {
+	for _, d := range r.Diffs {
+		if d.Change != Unchanged {
 			return true
 		}
 	}
 	return false
 }
 
-// Compare diffs two slices of env entries and returns a Result.
-func Compare(base, target []envfile.Entry) Result {
+// Compare computes the diff between a base and head set of env entries.
+func Compare(base, head []envfile.Entry) Result {
 	baseMap := toMap(base)
-	targetMap := toMap(target)
+	headMap := toMap(head)
 
-	seen := map[string]bool{}
-	var changes []Change
+	keys := make(map[string]struct{})
+	for k := range baseMap {
+		keys[k] = struct{}{}
+	}
+	for k := range headMap {
+		keys[k] = struct{}{}
+	}
 
-	for _, e := range base {
-		if seen[e.Key] {
-			continue
-		}
-		seen[e.Key] = true
+	sorted := make([]string, 0, len(keys))
+	for k := range keys {
+		sorted = append(sorted, k)
+	}
+	sort.Strings(sorted)
 
-		newVal, exists := targetMap[e.Key]
+	var diffs []Diff
+	for _, k := range sorted {
+		oldVal, inBase := baseMap[k]
+		newVal, inHead := headMap[k]
+
 		switch {
-		case !exists:
-			changes = append(changes, Change{Key: e.Key, Kind: Removed, OldValue: e.Value})
-		case newVal != e.Value:
-			changes = append(changes, Change{Key: e.Key, Kind: Changed, OldValue: e.Value, NewValue: newVal})
+		case inBase && !inHead:
+			diffs = append(diffs, Diff{Key: k, OldValue: oldVal, Change: Removed})
+		case !inBase && inHead:
+			diffs = append(diffs, Diff{Key: k, NewValue: newVal, Change: Added})
+		case oldVal != newVal:
+			diffs = append(diffs, Diff{Key: k, OldValue: oldVal, NewValue: newVal, Change: Changed})
 		default:
-			changes = append(changes, Change{Key: e.Key, Kind: Unchanged, OldValue: e.Value, NewValue: newVal})
+			diffs = append(diffs, Diff{Key: k, OldValue: oldVal, NewValue: newVal, Change: Unchanged})
 		}
 	}
 
-	for _, e := range target {
-		if seen[e.Key] {
-			continue
-		}
-		seen[e.Key] = true
-		if _, exists := baseMap[e.Key]; !exists {
-			changes = append(changes, Change{Key: e.Key, Kind: Added, NewValue: e.Value})
-		}
-	}
-
-	return Result{Changes: changes}
+	return Result{Diffs: diffs}
 }
 
 func toMap(entries []envfile.Entry) map[string]string {

@@ -3,86 +3,92 @@ package differ_test
 import (
 	"testing"
 
-	"github.com/user/envoy-cli/internal/differ"
-	"github.com/user/envoy-cli/internal/envfile"
+	"envoy-cli/internal/differ"
+	"envoy-cli/internal/envfile"
 )
 
 func mkEntries(pairs ...string) []envfile.Entry {
-	var out []envfile.Entry
+	var entries []envfile.Entry
 	for i := 0; i+1 < len(pairs); i += 2 {
-		out = append(out, envfile.Entry{Key: pairs[i], Value: pairs[i+1]})
+		entries = append(entries, envfile.Entry{Key: pairs[i], Value: pairs[i+1]})
 	}
-	return out
+	return entries
 }
 
 func TestCompare_NoChanges(t *testing.T) {
-	base := mkEntries("A", "1", "B", "2")
-	result := differ.Compare(base, base)
-	if result.HasDiff() {
-		t.Fatal("expected no diff")
+	base := mkEntries("HOST", "localhost", "PORT", "5432")
+	head := mkEntries("HOST", "localhost", "PORT", "5432")
+	res := differ.Compare(base, head)
+	if res.HasChanges() {
+		t.Fatal("expected no changes")
 	}
-	for _, c := range result.Changes {
-		if c.Kind != differ.Unchanged {
-			t.Errorf("expected Unchanged, got %s for key %s", c.Kind, c.Key)
-		}
+	if len(res.Diffs) != 2 {
+		t.Fatalf("expected 2 diffs, got %d", len(res.Diffs))
 	}
 }
 
 func TestCompare_AddedKeys(t *testing.T) {
-	base := mkEntries("A", "1")
-	target := mkEntries("A", "1", "B", "2")
-	result := differ.Compare(base, target)
-	if !result.HasDiff() {
-		t.Fatal("expected diff")
+	base := mkEntries("HOST", "localhost")
+	head := mkEntries("HOST", "localhost", "PORT", "5432")
+	res := differ.Compare(base, head)
+	if !res.HasChanges() {
+		t.Fatal("expected changes")
 	}
 	found := false
-	for _, c := range result.Changes {
-		if c.Key == "B" && c.Kind == differ.Added {
+	for _, d := range res.Diffs {
+		if d.Key == "PORT" && d.Change == differ.Added {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected key B to be marked as Added")
+		t.Error("expected PORT to be marked as added")
 	}
 }
 
 func TestCompare_RemovedKeys(t *testing.T) {
-	base := mkEntries("A", "1", "B", "2")
-	target := mkEntries("A", "1")
-	result := differ.Compare(base, target)
-	if !result.HasDiff() {
-		t.Fatal("expected diff")
+	base := mkEntries("HOST", "localhost", "PORT", "5432")
+	head := mkEntries("HOST", "localhost")
+	res := differ.Compare(base, head)
+	if !res.HasChanges() {
+		t.Fatal("expected changes")
 	}
-	for _, c := range result.Changes {
-		if c.Key == "B" && c.Kind != differ.Removed {
-			t.Errorf("expected B to be Removed, got %s", c.Kind)
+	for _, d := range res.Diffs {
+		if d.Key == "PORT" && d.Change != differ.Removed {
+			t.Errorf("expected PORT removed, got %s", d.Change)
 		}
 	}
 }
 
 func TestCompare_ChangedKeys(t *testing.T) {
-	base := mkEntries("A", "old")
-	target := mkEntries("A", "new")
-	result := differ.Compare(base, target)
-	if !result.HasDiff() {
-		t.Fatal("expected diff")
+	base := mkEntries("HOST", "localhost")
+	head := mkEntries("HOST", "production.db")
+	res := differ.Compare(base, head)
+	if !res.HasChanges() {
+		t.Fatal("expected changes")
 	}
-	for _, c := range result.Changes {
-		if c.Key == "A" {
-			if c.Kind != differ.Changed {
-				t.Errorf("expected Changed, got %s", c.Kind)
+	for _, d := range res.Diffs {
+		if d.Key == "HOST" {
+			if d.Change != differ.Changed {
+				t.Errorf("expected HOST changed, got %s", d.Change)
 			}
-			if c.OldValue != "old" || c.NewValue != "new" {
-				t.Errorf("unexpected values: old=%s new=%s", c.OldValue, c.NewValue)
+			if d.OldValue != "localhost" || d.NewValue != "production.db" {
+				t.Errorf("unexpected values: old=%s new=%s", d.OldValue, d.NewValue)
 			}
 		}
 	}
 }
 
-func TestCompare_HasDiff_ReturnsFalseWhenClean(t *testing.T) {
-	entries := mkEntries("X", "1", "Y", "2")
-	result := differ.Compare(entries, entries)
-	if result.HasDiff() {
-		t.Error("HasDiff should return false for identical inputs")
+func TestCompare_ResultSortedByKey(t *testing.T) {
+	base := mkEntries("Z_KEY", "1", "A_KEY", "2")
+	head := mkEntries("Z_KEY", "1", "A_KEY", "2")
+	res := differ.Compare(base, head)
+	if len(res.Diffs) < 2 {
+		t.Fatal("expected at least 2 diffs")
+	}
+	if res.Diffs[0].Key != "A_KEY" {
+		t.Errorf("expected A_KEY first, got %s", res.Diffs[0].Key)
+	}
+	if res.Diffs[1].Key != "Z_KEY" {
+		t.Errorf("expected Z_KEY second, got %s", res.Diffs[1].Key)
 	}
 }
