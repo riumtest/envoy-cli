@@ -77,3 +77,15 @@ func TestTagCmd_InvalidRule(t *testing.T) {
 		t.Error("expected error for invalid rule format")
 	}
 }
+
+func TestTagCmd_NoRules(t *testing.T) {
+	file := writeTagTempEnv(t, "DB_HOST=localhost\nAPP_ENV=prod\n")
+	out, err := execTag(file)
+	if err != nil {
+		t.Fatalf("unexpected error with no rules: %v", err)
+	}
+	// With no rules, all variables should appear untagged
+	if !strings.Contains(out, "DB_HOST") {
+		t.Errorf("expected DB_HOST in output when no rules provided, got: %s", out)
+	}
+}
