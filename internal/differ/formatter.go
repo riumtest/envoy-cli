@@ -1,100 +1,92 @@
 package differ
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
+
+	"github.com/yourusername/envoy-cli/internal/masker"
 )
 
-// Formatter defines the interface for formatting diff results
+const defaultMask = "***"
+
+// Formatter renders a diff Result to an output writer.
 type Formatter interface {
-	Format(*Result) string
+	Format(w io.Writer, result *Result) error
 }
 
-// TextFormatter formats differences as plain text
+// TextFormatter writes a human-readable diff.
 type TextFormatter struct {
-	MaskSecrets bool
+	Masker *masker.Masker
 }
 
-// Format returns a plain text representation of differences
-func (f *TextFormatter) Format(result *Result) string {
-	if !result.HasChanges() {
-		return "No differences found\n"
+// JSONFormatter writes a JSON diff.
+type JSONFormatter struct {
+	Masker *masker.Masker
+}
+
+// NewFormatter returns a Formatter based on the format string ("text" or "json").
+func NewFormatter(format string, m *masker.Masker) Formatter {
+	switch strings.ToLower(format) {
+	case "json":
+		return &JSONFormatter{Masker: m}
+	default:
+		return &TextFormatter{Masker: m}
 	}
+}
 
-	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("Found %d difference(s):\n\n", len(result.Differences)))
-
-	for _, diff := range result.Differences {
-		switch diff.Type {
-		case DiffTypeAdded:
-			value := diff.NewValue
-			if f.MaskSecrets {
-				value = maskValue(value)
-			}
-			builder.WriteString(fmt.Sprintf("+ %s=%s\n", diff.Key, value))
-		case DiffTypeRemoved:
-			value := diff.OldValue
-			if f.MaskSecrets {
-				value = maskValue(value)
-			}
-			builder.WriteString(fmt.Sprintf("- %s=%s\n", diff.Key, value))
-		case DiffTypeChanged:
-			oldValue := diff.OldValue
-			newValue := diff.NewValue
-			if f.MaskSecrets {
-				oldValue = maskValue(oldValue)
-				newValue = maskValue(newValue)
-			}
-			builder.WriteString(fmt.Sprintf("~ %s\n", diff.Key))
-			builder.WriteString(fmt.Sprintf("  - %s\n", oldValue))
-			builder.WriteString(fmt.Sprintf("  + %s\n", newValue))
+// Format writes a text diff to w.
+func (f *TextFormatter) Format(w io.Writer, result *Result) error {
+	if len(result.Changes) == 0 {
+		_, err := fmt.Fprintln(w, "No differences found.")
+		return err
+	}
+	for _, c := range result.Changes {
+		switch c.Type {
+		case Added:
+			fmt.Fprintf(w, "+ %s=%s\n", c.Key, maskValue(f.Masker, c.Key, c.NewValue))
+		case Removed:
+			fmt.Fprintf(w, "- %s=%s\n", c.Key, maskValue(f.Masker, c.Key, c.OldValue))
+		case Changed:
+			fmt.Fprintf(w, "~ %s: %s -> %s\n", c.Key,
+				maskValue(f.Masker, c.Key, c.OldValue),
+				maskValue(f.Masker, c.Key, c.NewValue))
 		}
 	}
-
-	builder.WriteString(fmt.Sprintf("\n%s\n", result.Summary()))
-	return builder.String()
+	return nil
 }
 
-// maskValue masks a value for secret protection.
-// Values of 4 characters or fewer are fully masked. Longer values
-// retain the first 2 and last 2 characters to aid identification.
-func maskValue(value string) string {
-	if len(value) == 0 {
-		return ""
+// Format writes a JSON diff to w.
+func (f *JSONFormatter) Format(w io.Writer, result *Result) error {
+	type jsonChange struct {
+		Key      string `json:"key"`
+		Type     string `json:"type"`
+		OldValue string `json:"old_value,omitempty"`
+		NewValue string `json:"new_value,omitempty"`
 	}
-	if len(value) <= 4 {
-		return "****"
+
+	var out []jsonChange
+	for _, c := range result.Changes {
+		if c.Type == Unchanged {
+			continue
+		}
+		out = append(out, jsonChange{
+			Key:      c.Key,
+			Type:     string(c.Type),
+			OldValue: maskValue(f.Masker, c.Key, c.OldValue),
+			NewValue: maskValue(f.Masker, c.Key, c.NewValue),
+		})
 	}
-	// Show first 2 and last 2 characters
-	return value[:2] + "****" + value[len(value)-2:]
-}
-
-// JSONFormatter formats differences as JSON (placeholder for future implementation)
-type JSONFormatter struct {
-	MaskSecrets bool
-}
-
-// Format returns a JSON representation of differences
-func (f *JSONFormatter) Format(result *Result) string {
-	// Simplified JSON output for now
-	var builder strings.Builder
-	builder.WriteString("{\n")
-	builder.WriteString(fmt.Sprintf("  \"total\": %d,\n", len(result.Differences)))
-	builder.WriteString(fmt.Sprintf("  \"summary\": \"%s\"\n", result.Summary()))
-	builder.WriteString("}\n")
-	return builder.String()
-}
-
-// NewFormatter returns a Formatter implementation for the given format name.
-// Supported values are "text" and "json". If the format is unrecognised,
-// NewFormatter falls back to TextFormatter and returns an error.
-func NewFormatter(format string, maskSecrets bool) (Formatter, error) {
-	switch strings.ToLower(format) {
-	case "text", "":
-		return &TextFormatter{MaskSecrets: maskSecrets}, nil
-	case "json":
-		return &JSONFormatter{MaskSecrets: maskSecrets}, nil
-	default:
-		return &TextFormatter{MaskSecrets: maskSecrets}, fmt.Errorf("unknown formatter %q, falling back to text", format)
+	if out == nil {
+		out = []jsonChange{}
 	}
+	return json.NewEncoder(w).Encode(out)
+}
+
+func maskValue(m *masker.Masker, key, value string) string {
+	if m != nil && m.IsSensitive(key) {
+		return defaultMask
+	}
+	return value
 }
