@@ -3,86 +3,90 @@ package differ_test
 import (
 	"testing"
 
-	"github.com/yourusername/envoy-cli/internal/differ"
-	"github.com/yourusername/envoy-cli/internal/envfile"
+	"github.com/envoy-cli/internal/differ"
+	"github.com/envoy-cli/internal/envfile"
 )
 
 func TestCompare_NoChanges(t *testing.T) {
-	base := []envfile.Entry{{Key: "FOO", Value: "bar"}}
-	target := []envfile.Entry{{Key: "FOO", Value: "bar"}}
-
-	result := differ.Compare(base, target)
-	summary := result.Summary()
-
-	if summary[differ.Unchanged] != 1 {
-		t.Errorf("expected 1 unchanged, got %d", summary[differ.Unchanged])
+	base := []envfile.Entry{
+		{Key: "FOO", Value: "bar"},
+		{Key: "BAZ", Value: "qux"},
 	}
-	if summary[differ.Changed]+summary[differ.Added]+summary[differ.Removed] != 0 {
-		t.Error("expected no other changes")
+	result := differ.Compare(base, base)
+	for _, d := range result.Diffs {
+		if d.Type != differ.Unchanged {
+			t.Errorf("expected unchanged, got %s for key %s", d.Type, d.Key)
+		}
 	}
 }
 
 func TestCompare_AddedKeys(t *testing.T) {
-	base := []envfile.Entry{}
-	target := []envfile.Entry{{Key: "NEW_KEY", Value: "value"}}
-
+	base := []envfile.Entry{{Key: "FOO", Value: "bar"}}
+	target := []envfile.Entry{
+		{Key: "FOO", Value: "bar"},
+		{Key: "NEW", Value: "value"},
+	}
 	result := differ.Compare(base, target)
-	summary := result.Summary()
-
-	if summary[differ.Added] != 1 {
-		t.Errorf("expected 1 added, got %d", summary[differ.Added])
+	found := false
+	for _, d := range result.Diffs {
+		if d.Key == "NEW" && d.Type == differ.Added {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected NEW key to be marked as added")
 	}
 }
 
 func TestCompare_RemovedKeys(t *testing.T) {
-	base := []envfile.Entry{{Key: "OLD_KEY", Value: "value"}}
-	target := []envfile.Entry{}
-
+	base := []envfile.Entry{
+		{Key: "FOO", Value: "bar"},
+		{Key: "OLD", Value: "gone"},
+	}
+	target := []envfile.Entry{{Key: "FOO", Value: "bar"}}
 	result := differ.Compare(base, target)
-	summary := result.Summary()
-
-	if summary[differ.Removed] != 1 {
-		t.Errorf("expected 1 removed, got %d", summary[differ.Removed])
+	found := false
+	for _, d := range result.Diffs {
+		if d.Key == "OLD" && d.Type == differ.Removed {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected OLD key to be marked as removed")
 	}
 }
 
 func TestCompare_ChangedKeys(t *testing.T) {
 	base := []envfile.Entry{{Key: "FOO", Value: "old"}}
 	target := []envfile.Entry{{Key: "FOO", Value: "new"}}
-
 	result := differ.Compare(base, target)
-	summary := result.Summary()
-
-	if summary[differ.Changed] != 1 {
-		t.Errorf("expected 1 changed, got %d", summary[differ.Changed])
+	if len(result.Diffs) != 1 {
+		t.Fatalf("expected 1 diff, got %d", len(result.Diffs))
+	}
+	if result.Diffs[0].Type != differ.Changed {
+		t.Errorf("expected changed, got %s", result.Diffs[0].Type)
+	}
+	if result.Diffs[0].OldValue != "old" || result.Diffs[0].NewValue != "new" {
+		t.Errorf("unexpected values: old=%s new=%s", result.Diffs[0].OldValue, result.Diffs[0].NewValue)
 	}
 }
 
 func TestSummary(t *testing.T) {
 	base := []envfile.Entry{
-		{Key: "KEEP", Value: "same"},
-		{Key: "MODIFY", Value: "old"},
-		{Key: "REMOVE", Value: "gone"},
+		{Key: "A", Value: "1"},
+		{Key: "B", Value: "2"},
 	}
 	target := []envfile.Entry{
-		{Key: "KEEP", Value: "same"},
-		{Key: "MODIFY", Value: "new"},
-		{Key: "ADD", Value: "fresh"},
+		{Key: "A", Value: "changed"},
+		{Key: "C", Value: "new"},
 	}
-
 	result := differ.Compare(base, target)
 	summary := result.Summary()
-
-	if summary[differ.Unchanged] != 1 {
-		t.Errorf("expected 1 unchanged, got %d", summary[differ.Unchanged])
+	if summary == "" {
+		t.Error("expected non-empty summary")
 	}
-	if summary[differ.Changed] != 1 {
-		t.Errorf("expected 1 changed, got %d", summary[differ.Changed])
-	}
-	if summary[differ.Removed] != 1 {
-		t.Errorf("expected 1 removed, got %d", summary[differ.Removed])
-	}
-	if summary[differ.Added] != 1 {
-		t.Errorf("expected 1 added, got %d", summary[differ.Added])
+	expected := "1 added, 1 removed, 1 changed"
+	if summary != expected {
+		t.Errorf("expected %q, got %q", expected, summary)
 	}
 }
