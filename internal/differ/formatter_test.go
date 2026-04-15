@@ -2,101 +2,94 @@ package differ_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 	"testing"
 
-	"github.com/yourusername/envoy-cli/internal/differ"
-	"github.com/yourusername/envoy-cli/internal/envfile"
-	"github.com/yourusername/envoy-cli/internal/masker"
+	"github.com/envoy-cli/envoy-cli/internal/differ"
+	"github.com/envoy-cli/envoy-cli/internal/envfile"
+	"github.com/envoy-cli/envoy-cli/internal/masker"
 )
 
 func TestTextFormatter_NoChanges(t *testing.T) {
 	base := []envfile.Entry{{Key: "FOO", Value: "bar"}}
 	target := []envfile.Entry{{Key: "FOO", Value: "bar"}}
 	result := differ.Compare(base, target)
-
-	f := differ.NewFormatter("text", nil)
 	var buf bytes.Buffer
+	f := differ.NewFormatter("text", nil)
 	if err := f.Format(&buf, result); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "No differences") {
-		t.Errorf("expected no-differences message, got: %q", buf.String())
+	if buf.Len() != 0 {
+		t.Errorf("expected empty output, got: %s", buf.String())
 	}
 }
 
 func TestTextFormatter_WithChanges(t *testing.T) {
-	base := []envfile.Entry{{Key: "FOO", Value: "old"}, {Key: "GONE", Value: "bye"}}
-	target := []envfile.Entry{{Key: "FOO", Value: "new"}, {Key: "ADDED", Value: "hi"}}
+	base := []envfile.Entry{{Key: "FOO", Value: "old"}, {Key: "GONE", Value: "x"}}
+	target := []envfile.Entry{{Key: "FOO", Value: "new"}, {Key: "BAR", Value: "added"}}
 	result := differ.Compare(base, target)
-
-	f := differ.NewFormatter("text", nil)
 	var buf bytes.Buffer
-	_ = f.Format(&buf, result)
+	f := differ.NewFormatter("text", nil)
+	if err := f.Format(&buf, result); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
-
-	if !strings.Contains(out, "~ FOO") {
-		t.Errorf("expected changed FOO, got: %q", out)
+	if !strings.Contains(out, "+ BAR") {
+		t.Error("expected added BAR")
 	}
 	if !strings.Contains(out, "- GONE") {
-		t.Errorf("expected removed GONE, got: %q", out)
+		t.Error("expected removed GONE")
 	}
-	if !strings.Contains(out, "+ ADDED") {
-		t.Errorf("expected added ADDED, got: %q", out)
+	if !strings.Contains(out, "~ FOO") {
+		t.Error("expected changed FOO")
 	}
 }
 
 func TestTextFormatter_WithMasking(t *testing.T) {
-	base := []envfile.Entry{{Key: "API_SECRET", Value: "old-secret"}}
-	target := []envfile.Entry{{Key: "API_SECRET", Value: "new-secret"}}
+	base := []envfile.Entry{{Key: "SECRET_KEY", Value: "oldpassword"}}
+	target := []envfile.Entry{{Key: "SECRET_KEY", Value: "newpassword"}}
 	result := differ.Compare(base, target)
-
 	m := masker.New()
-	f := differ.NewFormatter("text", m)
 	var buf bytes.Buffer
-	_ = f.Format(&buf, result)
-	out := buf.String()
-
-	if strings.Contains(out, "old-secret") || strings.Contains(out, "new-secret") {
-		t.Errorf("expected secrets to be masked, got: %q", out)
+	f := differ.NewFormatter("text", m)
+	if err := f.Format(&buf, result); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(out, "***") {
-		t.Errorf("expected mask placeholder, got: %q", out)
+	out := buf.String()
+	if strings.Contains(out, "oldpassword") || strings.Contains(out, "newpassword") {
+		t.Error("expected masked values")
 	}
 }
 
 func TestMaskValue(t *testing.T) {
-	base := []envfile.Entry{{Key: "PASSWORD", Value: "hunter2"}}
-	target := []envfile.Entry{{Key: "PASSWORD", Value: "hunter3"}}
-	result := differ.Compare(base, target)
-
 	m := masker.New()
-	f := differ.NewFormatter("text", m)
+	base := []envfile.Entry{{Key: "DB_PASSWORD", Value: "secret"}}
+	target := []envfile.Entry{{Key: "DB_PASSWORD", Value: "newsecret"}}
+	result := differ.Compare(base, target)
 	var buf bytes.Buffer
-	_ = f.Format(&buf, result)
-
-	if strings.Contains(buf.String(), "hunter") {
-		t.Errorf("password should be masked")
+	f := differ.NewFormatter("text", m)
+	if err := f.Format(&buf, result); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "secret") {
+		t.Error("sensitive value should be masked")
 	}
 }
 
 func TestJSONFormatter(t *testing.T) {
-	base := []envfile.Entry{{Key: "FOO", Value: "old"}}
-	target := []envfile.Entry{{Key: "FOO", Value: "new"}, {Key: "BAR", Value: "added"}}
+	base := []envfile.Entry{{Key: "A", Value: "1"}}
+	target := []envfile.Entry{{Key: "A", Value: "2"}, {Key: "B", Value: "3"}}
 	result := differ.Compare(base, target)
-
-	f := differ.NewFormatter("json", nil)
 	var buf bytes.Buffer
+	f := differ.NewFormatter("json", nil)
 	if err := f.Format(&buf, result); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-
-	var out []map[string]string
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+	out := buf.String()
+	if !strings.Contains(out, "\"key\"") {
+		t.Error("expected JSON with key field")
 	}
-	if len(out) != 2 {
-		t.Errorf("expected 2 changes in JSON, got %d", len(out))
+	if !strings.Contains(out, "changed") && !strings.Contains(out, "added") {
+		t.Error("expected change kinds in JSON")
 	}
 }

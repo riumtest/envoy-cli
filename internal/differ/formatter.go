@@ -4,89 +4,80 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
-	"github.com/yourusername/envoy-cli/internal/masker"
+	"github.com/envoy-cli/envoy-cli/internal/masker"
 )
 
-const defaultMask = "***"
-
-// Formatter renders a diff Result to an output writer.
+// Formatter writes a diff Result to a writer.
 type Formatter interface {
-	Format(w io.Writer, result *Result) error
+	Format(w io.Writer, result Result) error
 }
 
-// TextFormatter writes a human-readable diff.
-type TextFormatter struct {
-	Masker *masker.Masker
-}
-
-// JSONFormatter writes a JSON diff.
-type JSONFormatter struct {
-	Masker *masker.Masker
-}
-
-// NewFormatter returns a Formatter based on the format string ("text" or "json").
+// NewFormatter returns a Formatter for the given format string ("text" or "json").
 func NewFormatter(format string, m *masker.Masker) Formatter {
 	switch strings.ToLower(format) {
 	case "json":
-		return &JSONFormatter{Masker: m}
+		return &jsonFormatter{masker: m}
 	default:
-		return &TextFormatter{Masker: m}
+		return &textFormatter{masker: m}
 	}
 }
 
-// Format writes a text diff to w.
-func (f *TextFormatter) Format(w io.Writer, result *Result) error {
-	if len(result.Changes) == 0 {
-		_, err := fmt.Fprintln(w, "No differences found.")
-		return err
-	}
-	for _, c := range result.Changes {
-		switch c.Type {
+type textFormatter struct {
+	masker *masker.Masker
+}
+
+func (f *textFormatter) Format(w io.Writer, result Result) error {
+	changes := result.Changes
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Key < changes[j].Key })
+	for _, c := range changes {
+		switch c.Kind {
 		case Added:
-			fmt.Fprintf(w, "+ %s=%s\n", c.Key, maskValue(f.Masker, c.Key, c.NewValue))
+			fmt.Fprintf(w, "+ %s=%s\n", c.Key, maskValue(f.masker, c.Key, c.NewValue))
 		case Removed:
-			fmt.Fprintf(w, "- %s=%s\n", c.Key, maskValue(f.Masker, c.Key, c.OldValue))
+			fmt.Fprintf(w, "- %s=%s\n", c.Key, maskValue(f.masker, c.Key, c.OldValue))
 		case Changed:
 			fmt.Fprintf(w, "~ %s: %s -> %s\n", c.Key,
-				maskValue(f.Masker, c.Key, c.OldValue),
-				maskValue(f.Masker, c.Key, c.NewValue))
+				maskValue(f.masker, c.Key, c.OldValue),
+				maskValue(f.masker, c.Key, c.NewValue))
 		}
 	}
 	return nil
 }
 
-// Format writes a JSON diff to w.
-func (f *JSONFormatter) Format(w io.Writer, result *Result) error {
+type jsonFormatter struct {
+	masker *masker.Masker
+}
+
+func (f *jsonFormatter) Format(w io.Writer, result Result) error {
 	type jsonChange struct {
 		Key      string `json:"key"`
-		Type     string `json:"type"`
+		Kind     string `json:"kind"`
 		OldValue string `json:"old_value,omitempty"`
 		NewValue string `json:"new_value,omitempty"`
 	}
-
-	var out []jsonChange
+	out := make([]jsonChange, 0, len(result.Changes))
 	for _, c := range result.Changes {
-		if c.Type == Unchanged {
+		if c.Kind == Unchanged {
 			continue
 		}
 		out = append(out, jsonChange{
 			Key:      c.Key,
-			Type:     string(c.Type),
-			OldValue: maskValue(f.Masker, c.Key, c.OldValue),
-			NewValue: maskValue(f.Masker, c.Key, c.NewValue),
+			Kind:     string(c.Kind),
+			OldValue: maskValue(f.masker, c.Key, c.OldValue),
+			NewValue: maskValue(f.masker, c.Key, c.NewValue),
 		})
 	}
-	if out == nil {
-		out = []jsonChange{}
-	}
-	return json.NewEncoder(w).Encode(out)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 func maskValue(m *masker.Masker, key, value string) string {
 	if m != nil && m.IsSensitive(key) {
-		return defaultMask
+		return m.Mask(value)
 	}
 	return value
 }
