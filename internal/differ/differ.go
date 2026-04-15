@@ -1,13 +1,11 @@
-// Package differ provides functionality for comparing two sets of env entries.
+// Package differ compares two sets of env entries and reports differences.
 package differ
 
 import (
-	"fmt"
-
-	"github.com/envoy-cli/envoy-cli/internal/envfile"
+	"github.com/user/envoy-cli/internal/envfile"
 )
 
-// ChangeKind represents the type of change between two env files.
+// ChangeKind describes the type of change detected between two env files.
 type ChangeKind string
 
 const (
@@ -17,7 +15,7 @@ const (
 	Unchanged ChangeKind = "unchanged"
 )
 
-// Change represents a single key-level difference.
+// Change represents a single key-level diff between two env files.
 type Change struct {
 	Key      string
 	Kind     ChangeKind
@@ -30,48 +28,52 @@ type Result struct {
 	Changes []Change
 }
 
-// Summary returns a human-readable summary of the diff result.
-func (r *Result) Summary() string {
-	added, removed, changed := 0, 0, 0
+// HasDiff returns true if any non-unchanged entries exist.
+func (r Result) HasDiff() bool {
 	for _, c := range r.Changes {
-		switch c.Kind {
-		case Added:
-			added++
-		case Removed:
-			removed++
-		case Changed:
-			changed++
+		if c.Kind != Unchanged {
+			return true
 		}
 	}
-	return fmt.Sprintf("added=%d removed=%d changed=%d", added, removed, changed)
+	return false
 }
 
-// Compare diffs two slices of env entries, returning a Result.
-func Compare(base, target []envfile.Entry) *Result {
+// Compare diffs two slices of env entries and returns a Result.
+func Compare(base, target []envfile.Entry) Result {
 	baseMap := toMap(base)
 	targetMap := toMap(target)
 
+	seen := map[string]bool{}
 	var changes []Change
 
-	for k, bv := range baseMap {
-		if tv, ok := targetMap[k]; ok {
-			if bv != tv {
-				changes = append(changes, Change{Key: k, Kind: Changed, OldValue: bv, NewValue: tv})
-			} else {
-				changes = append(changes, Change{Key: k, Kind: Unchanged, OldValue: bv, NewValue: tv})
-			}
-		} else {
-			changes = append(changes, Change{Key: k, Kind: Removed, OldValue: bv})
+	for _, e := range base {
+		if seen[e.Key] {
+			continue
+		}
+		seen[e.Key] = true
+
+		newVal, exists := targetMap[e.Key]
+		switch {
+		case !exists:
+			changes = append(changes, Change{Key: e.Key, Kind: Removed, OldValue: e.Value})
+		case newVal != e.Value:
+			changes = append(changes, Change{Key: e.Key, Kind: Changed, OldValue: e.Value, NewValue: newVal})
+		default:
+			changes = append(changes, Change{Key: e.Key, Kind: Unchanged, OldValue: e.Value, NewValue: newVal})
 		}
 	}
 
-	for k, tv := range targetMap {
-		if _, ok := baseMap[k]; !ok {
-			changes = append(changes, Change{Key: k, Kind: Added, NewValue: tv})
+	for _, e := range target {
+		if seen[e.Key] {
+			continue
+		}
+		seen[e.Key] = true
+		if _, exists := baseMap[e.Key]; !exists {
+			changes = append(changes, Change{Key: e.Key, Kind: Added, NewValue: e.Value})
 		}
 	}
 
-	return &Result{Changes: changes}
+	return Result{Changes: changes}
 }
 
 func toMap(entries []envfile.Entry) map[string]string {

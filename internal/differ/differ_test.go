@@ -1,11 +1,10 @@
 package differ_test
 
 import (
-	"strings"
 	"testing"
 
-	"github.com/envoy-cli/envoy-cli/internal/differ"
-	"github.com/envoy-cli/envoy-cli/internal/envfile"
+	"github.com/user/envoy-cli/internal/differ"
+	"github.com/user/envoy-cli/internal/envfile"
 )
 
 func mkEntries(pairs ...string) []envfile.Entry {
@@ -17,70 +16,73 @@ func mkEntries(pairs ...string) []envfile.Entry {
 }
 
 func TestCompare_NoChanges(t *testing.T) {
-	base := mkEntries("FOO", "bar", "BAZ", "qux")
-	target := mkEntries("FOO", "bar", "BAZ", "qux")
-	res := differ.Compare(base, target)
-	for _, c := range res.Changes {
+	base := mkEntries("A", "1", "B", "2")
+	result := differ.Compare(base, base)
+	if result.HasDiff() {
+		t.Fatal("expected no diff")
+	}
+	for _, c := range result.Changes {
 		if c.Kind != differ.Unchanged {
-			t.Errorf("expected unchanged, got %s for key %s", c.Kind, c.Key)
+			t.Errorf("expected Unchanged, got %s for key %s", c.Kind, c.Key)
 		}
 	}
 }
 
 func TestCompare_AddedKeys(t *testing.T) {
-	base := mkEntries("FOO", "bar")
-	target := mkEntries("FOO", "bar", "NEW", "val")
-	res := differ.Compare(base, target)
+	base := mkEntries("A", "1")
+	target := mkEntries("A", "1", "B", "2")
+	result := differ.Compare(base, target)
+	if !result.HasDiff() {
+		t.Fatal("expected diff")
+	}
 	found := false
-	for _, c := range res.Changes {
-		if c.Key == "NEW" && c.Kind == differ.Added {
+	for _, c := range result.Changes {
+		if c.Key == "B" && c.Kind == differ.Added {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected NEW to be marked as added")
+		t.Error("expected key B to be marked as Added")
 	}
 }
 
 func TestCompare_RemovedKeys(t *testing.T) {
-	base := mkEntries("FOO", "bar", "OLD", "gone")
-	target := mkEntries("FOO", "bar")
-	res := differ.Compare(base, target)
-	found := false
-	for _, c := range res.Changes {
-		if c.Key == "OLD" && c.Kind == differ.Removed {
-			found = true
-		}
+	base := mkEntries("A", "1", "B", "2")
+	target := mkEntries("A", "1")
+	result := differ.Compare(base, target)
+	if !result.HasDiff() {
+		t.Fatal("expected diff")
 	}
-	if !found {
-		t.Error("expected OLD to be marked as removed")
+	for _, c := range result.Changes {
+		if c.Key == "B" && c.Kind != differ.Removed {
+			t.Errorf("expected B to be Removed, got %s", c.Kind)
+		}
 	}
 }
 
 func TestCompare_ChangedKeys(t *testing.T) {
-	base := mkEntries("FOO", "old")
-	target := mkEntries("FOO", "new")
-	res := differ.Compare(base, target)
-	if len(res.Changes) != 1 || res.Changes[0].Kind != differ.Changed {
-		t.Errorf("expected FOO to be changed, got %+v", res.Changes)
+	base := mkEntries("A", "old")
+	target := mkEntries("A", "new")
+	result := differ.Compare(base, target)
+	if !result.HasDiff() {
+		t.Fatal("expected diff")
 	}
-	if res.Changes[0].OldValue != "old" || res.Changes[0].NewValue != "new" {
-		t.Errorf("unexpected old/new values: %+v", res.Changes[0])
+	for _, c := range result.Changes {
+		if c.Key == "A" {
+			if c.Kind != differ.Changed {
+				t.Errorf("expected Changed, got %s", c.Kind)
+			}
+			if c.OldValue != "old" || c.NewValue != "new" {
+				t.Errorf("unexpected values: old=%s new=%s", c.OldValue, c.NewValue)
+			}
+		}
 	}
 }
 
-func TestSummary(t *testing.T) {
-	base := mkEntries("A", "1", "B", "2", "C", "3")
-	target := mkEntries("A", "changed", "D", "new")
-	res := differ.Compare(base, target)
-	summary := res.Summary()
-	if !strings.Contains(summary, "added=1") {
-		t.Errorf("expected added=1 in summary, got: %s", summary)
-	}
-	if !strings.Contains(summary, "removed=2") {
-		t.Errorf("expected removed=2 in summary, got: %s", summary)
-	}
-	if !strings.Contains(summary, "changed=1") {
-		t.Errorf("expected changed=1 in summary, got: %s", summary)
+func TestCompare_HasDiff_ReturnsFalseWhenClean(t *testing.T) {
+	entries := mkEntries("X", "1", "Y", "2")
+	result := differ.Compare(entries, entries)
+	if result.HasDiff() {
+		t.Error("HasDiff should return false for identical inputs")
 	}
 }
