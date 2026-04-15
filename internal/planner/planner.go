@@ -1,88 +1,75 @@
-// Package planner generates a migration plan from two sets of env entries,
-// describing the steps needed to transform source into target.
+// Package planner builds an ordered execution plan from a diff result.
 package planner
 
-import "github.com/envoy-cli/envoy-cli/internal/envfile"
+import (
+	"fmt"
 
-// ActionType describes the kind of change in a plan step.
-type ActionType string
-
-const (
-	ActionAdd    ActionType = "add"
-	ActionRemove ActionType = "remove"
-	ActionUpdate ActionType = "update"
-	ActionKeep   ActionType = "keep"
+	"github.com/envoy-cli/envoy-cli/internal/differ"
 )
 
-// Step represents a single migration action.
-type Step struct {
+// ActionKind describes what action should be taken.
+type ActionKind string
+
+const (
+	ActionSet    ActionKind = "set"
+	ActionDelete ActionKind = "delete"
+	ActionUpdate ActionKind = "update"
+	ActionNoop   ActionKind = "noop"
+)
+
+// Action is a single planned operation.
+type Action struct {
+	Kind     ActionKind
 	Key      string
-	Action   ActionType
 	OldValue string
 	NewValue string
 }
 
-// Plan holds the full set of migration steps.
+// String returns a human-readable description of the action.
+func (a Action) String() string {
+	switch a.Kind {
+	case ActionSet:
+		return fmt.Sprintf("SET %s=%s", a.Key, a.NewValue)
+	case ActionDelete:
+		return fmt.Sprintf("DELETE %s", a.Key)
+	case ActionUpdate:
+		return fmt.Sprintf("UPDATE %s: %s -> %s", a.Key, a.OldValue, a.NewValue)
+	default:
+		return fmt.Sprintf("NOOP %s", a.Key)
+	}
+}
+
+// Plan is an ordered list of actions.
 type Plan struct {
-	Steps []Step
+	Actions []Action
 }
 
-// AddCount returns the number of add steps.
-func (p *Plan) AddCount() int { return p.count(ActionAdd) }
-
-// RemoveCount returns the number of remove steps.
-func (p *Plan) RemoveCount() int { return p.count(ActionRemove) }
-
-// UpdateCount returns the number of update steps.
-func (p *Plan) UpdateCount() int { return p.count(ActionUpdate) }
-
-// KeepCount returns the number of keep steps.
-func (p *Plan) KeepCount() int { return p.count(ActionKeep) }
-
-func (p *Plan) count(a ActionType) int {
-	n := 0
-	for _, s := range p.Steps {
-		if s.Action == a {
-			n++
+// HasChanges reports whether the plan contains any non-noop actions.
+func (p *Plan) HasChanges() bool {
+	for _, a := range p.Actions {
+		if a.Kind != ActionNoop {
+			return true
 		}
 	}
-	return n
+	return false
 }
 
-// Build computes the migration plan from src entries to dst entries.
-func Build(src, dst []envfile.Entry) Plan {
-	srcMap := toMap(src)
-	dstMap := toMap(dst)
-
-	var steps []Step
-
-	// Check existing src keys.
-	for _, e := range src {
-		if dstVal, ok := dstMap[e.Key]; ok {
-			if dstVal == e.Value {
-				steps = append(steps, Step{Key: e.Key, Action: ActionKeep, OldValue: e.Value, NewValue: e.Value})
-			} else {
-				steps = append(steps, Step{Key: e.Key, Action: ActionUpdate, OldValue: e.Value, NewValue: dstVal})
-			}
-		} else {
-			steps = append(steps, Step{Key: e.Key, Action: ActionRemove, OldValue: e.Value})
+// Build constructs a Plan from a differ.Result.
+func Build(result differ.Result) Plan {
+	actions := make([]Action, 0, len(result.Changes))
+	for _, c := range result.Changes {
+		var a Action
+		switch c.Kind {
+		case differ.Added:
+			a = Action{Kind: ActionSet, Key: c.Key, NewValue: c.NewValue}
+		case differ.Removed:
+			a = Action{Kind: ActionDelete, Key: c.Key, OldValue: c.OldValue}
+		case differ.Changed:
+			a = Action{Kind: ActionUpdate, Key: c.Key, OldValue: c.OldValue, NewValue: c.NewValue}
+		default:
+			a = Action{Kind: ActionNoop, Key: c.Key}
 		}
+		actions = append(actions, a)
 	}
-
-	// Find keys only in dst.
-	for _, e := range dst {
-		if _, ok := srcMap[e.Key]; !ok {
-			steps = append(steps, Step{Key: e.Key, Action: ActionAdd, NewValue: e.Value})
-		}
-	}
-
-	return Plan{Steps: steps}
-}
-
-func toMap(entries []envfile.Entry) map[string]string {
-	m := make(map[string]string, len(entries))
-	for _, e := range entries {
-		m[e.Key] = e.Value
-	}
-	return m
+	return Plan{Actions: actions}
 }
