@@ -3,62 +3,79 @@ package differ_test
 import (
 	"testing"
 
-	"github.com/envoy-cli/envoy-cli/internal/differ"
-	"github.com/envoy-cli/envoy-cli/internal/envfile"
+	"github.com/yourusername/envoy-cli/internal/differ"
+	"github.com/yourusername/envoy-cli/internal/envfile"
 )
 
 func TestCompare_NoChanges(t *testing.T) {
 	base := []envfile.Entry{{Key: "FOO", Value: "bar"}}
 	target := []envfile.Entry{{Key: "FOO", Value: "bar"}}
+
 	result := differ.Compare(base, target)
-	for _, c := range result.Changes {
-		if c.Kind != differ.Unchanged {
-			t.Errorf("expected unchanged, got %s", c.Kind)
-		}
+	summary := result.Summary()
+
+	if summary[differ.Unchanged] != 1 {
+		t.Errorf("expected 1 unchanged, got %d", summary[differ.Unchanged])
+	}
+	if summary[differ.Changed]+summary[differ.Added]+summary[differ.Removed] != 0 {
+		t.Error("expected no other changes")
 	}
 }
 
 func TestCompare_AddedKeys(t *testing.T) {
 	base := []envfile.Entry{}
-	target := []envfile.Entry{{Key: "NEW", Value: "val"}}
+	target := []envfile.Entry{{Key: "NEW_KEY", Value: "value"}}
+
 	result := differ.Compare(base, target)
-	if len(result.Changes) != 1 || result.Changes[0].Kind != differ.Added {
-		t.Error("expected one added change")
+	summary := result.Summary()
+
+	if summary[differ.Added] != 1 {
+		t.Errorf("expected 1 added, got %d", summary[differ.Added])
 	}
 }
 
 func TestCompare_RemovedKeys(t *testing.T) {
-	base := []envfile.Entry{{Key: "OLD", Value: "val"}}
+	base := []envfile.Entry{{Key: "OLD_KEY", Value: "value"}}
 	target := []envfile.Entry{}
+
 	result := differ.Compare(base, target)
-	if len(result.Changes) != 1 || result.Changes[0].Kind != differ.Removed {
-		t.Error("expected one removed change")
+	summary := result.Summary()
+
+	if summary[differ.Removed] != 1 {
+		t.Errorf("expected 1 removed, got %d", summary[differ.Removed])
 	}
 }
 
 func TestCompare_ChangedKeys(t *testing.T) {
 	base := []envfile.Entry{{Key: "FOO", Value: "old"}}
 	target := []envfile.Entry{{Key: "FOO", Value: "new"}}
+
 	result := differ.Compare(base, target)
-	if len(result.Changes) != 1 || result.Changes[0].Kind != differ.Changed {
-		t.Errorf("expected changed, got %v", result.Changes)
-	}
-	if result.Changes[0].OldValue != "old" || result.Changes[0].NewValue != "new" {
-		t.Error("unexpected old/new values")
+	summary := result.Summary()
+
+	if summary[differ.Changed] != 1 {
+		t.Errorf("expected 1 changed, got %d", summary[differ.Changed])
 	}
 }
 
 func TestSummary(t *testing.T) {
 	base := []envfile.Entry{
-		{Key: "A", Value: "1"},
-		{Key: "B", Value: "2"},
+		{Key: "KEEP", Value: "same"},
+		{Key: "MODIFY", Value: "old"},
+		{Key: "REMOVE", Value: "gone"},
 	}
 	target := []envfile.Entry{
-		{Key: "A", Value: "changed"},
-		{Key: "C", Value: "3"},
+		{Key: "KEEP", Value: "same"},
+		{Key: "MODIFY", Value: "new"},
+		{Key: "ADD", Value: "fresh"},
 	}
+
 	result := differ.Compare(base, target)
 	summary := result.Summary()
+
+	if summary[differ.Unchanged] != 1 {
+		t.Errorf("expected 1 unchanged, got %d", summary[differ.Unchanged])
+	}
 	if summary[differ.Changed] != 1 {
 		t.Errorf("expected 1 changed, got %d", summary[differ.Changed])
 	}

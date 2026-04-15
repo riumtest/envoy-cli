@@ -1,29 +1,17 @@
-// Package differ provides functionality for comparing environment variable files
-// and generating human-readable diffs.
+// Package differ provides functionality for comparing two sets of environment
+// file entries and producing a structured diff result.
 //
-// The package supports:
-//   - Comparing two environment variable maps
-//   - Identifying added, removed, and changed variables
-//   - Formatting differences in multiple output formats (text, JSON)
-//   - Secret masking for sensitive values
+// It identifies keys that have been added, removed, changed, or remain
+// unchanged between a base and target environment. Results can be summarised
+// by change type and formatted via the formatter sub-package.
 //
 // Example usage:
 //
-//	source := map[string]string{"KEY1": "value1"}
-//	target := map[string]string{"KEY1": "value2", "KEY2": "new"}
+//	base := []envfile.Entry{{Key: "FOO", Value: "bar"}}
+//	target := []envfile.Entry{{Key: "FOO", Value: "baz"}, {Key: "NEW", Value: "val"}}
 //
-//	result := differ.Compare(source, target)
-//	formatter := &differ.TextFormatter{MaskSecrets: true}
-//	fmt.Println(formatter.Format(result))
-//
-// Output:
-//
-//	Found 2 difference(s):
-//
-//	+ KEY2=new
-//	~ KEY1
-//	  - value1
-//	  + value2
-//
-//	1 added, 0 removed, 1 changed
+//	result := differ.Compare(base, target)
+//	summary := result.Summary()
+//	// summary[differ.Changed] == 1
+//	// summary[differ.Added]   == 1
 package differ
