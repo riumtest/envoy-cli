@@ -68,7 +68,7 @@ func runTemplate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Enforce strict mode: fail on unresolved placeholders
-	if templateStrict && strings.Contains(result.Output, "{{") {
+	if templateStrict && len(result.Missing) > 0 {
 		summary := templater.Summary(result)
 		return fmt.Errorf(
 			"strict mode: %d placeholder(s) could not be resolved: %s",
