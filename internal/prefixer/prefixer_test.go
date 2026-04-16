@@ -59,6 +59,16 @@ func TestAdd_DoesNotMutateOriginal(t *testing.T) {
 	}
 }
 
+func TestAdd_PreservesLength(t *testing.T) {
+	opts := prefixer.DefaultOptions()
+	src := entries()
+	result := prefixer.Add(src, "DB", opts)
+
+	if len(result) != len(src) {
+		t.Errorf("length changed: got %d, want %d", len(result), len(src))
+	}
+}
+
 func TestRemove_StripsPrefix(t *testing.T) {
 	opts := prefixer.DefaultOptions()
 	withPrefix := prefixer.Add(entries(), "DB", opts)
