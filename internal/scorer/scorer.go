@@ -1,75 +1,69 @@
-// Package scorer provides a quality scoring mechanism for .env files,
-// evaluating entries based on key naming, value presence, and sensitivity exposure.
+// Package scorer evaluates the quality of env entries and returns a score.
 package scorer
 
 import (
 	"strings"
+	"unicode"
 
+	"github.com/envoy-cli/internal/envfile"
 	"github.com/envoy-cli/internal/masker"
 )
 
-// Result holds the scoring outcome for a set of env entries.
+const (
+	MaxScore = 100
+)
+
 type Result struct {
-	Score       int            // 0–100
-	MaxScore    int
-	Penalties   []string
-	Suggestions []string
-}
-
-// Entry represents a single key-value pair.
-type Entry struct {
 	Key   string
-	Value string
+	Score int
+	Notes []string
 }
 
-// Score evaluates a slice of entries and returns a Result.
-func Score(entries []Entry, m *masker.Masker) Result {
-	if len(entries) == 0 {
-		return Result{Score: 100, MaxScore: 100}
-	}
-
-	total := len(entries) * 3 // 3 checks per entry
-	penalties := []string{}
-	suggestions := []string{}
-	deductions := 0
-
+// Score evaluates each entry and returns a per-key result.
+func Score(entries []envfile.Entry) []Result {
+	m := masker.New()
+	out := make([]Result, 0, len(entries))
 	for _, e := range entries {
-		// Check 1: key is uppercase snake_case
-		if e.Key != strings.ToUpper(e.Key) {
-			deductions++
-			penalties = append(penalties, "key '"+e.Key+"' is not uppercase")
-			suggestions = append(suggestions, "rename '"+e.Key+"' to '"+strings.ToUpper(e.Key)+"'")
-		}
+		out = append(out, scoreEntry(e, m))
+	}
+	return out
+}
 
-		// Check 2: value is not empty
-		if strings.TrimSpace(e.Value) == "" {
-			deductions++
-			penalties = append(penalties, "key '"+e.Key+"' has an empty value")
-			suggestions = append(suggestions, "provide a value or remove '"+e.Key+"'")
-		}
+func scoreEntry(e envfile.Entry, m *masker.Masker) Result {
+	s := MaxScore
+	var notes []string
 
-		// Check 3: sensitive keys should not have plaintext-looking short values
-		if m != nil && m.IsSensitive(e.Key) {
-			if len(e.Value) > 0 && len(e.Value) < 8 {
-				deductions++
-				penalties = append(penalties, "sensitive key '"+e.Key+"' has a suspiciously short value")
-				suggestions = append(suggestions, "ensure '"+e.Key+"' contains a strong secret")
-			}
-		}
+	if e.Key == "" {
+		return Result{Key: e.Key, Score: 0, Notes: []string{"empty key"}}
 	}
 
-	score := 100
-	if total > 0 {
-		score = 100 - (deductions*100)/total
-	}
-	if score < 0 {
-		score = 0
+	if e.Key != strings.ToUpper(e.Key) {
+		s -= 20
+		notes = append(notes, "key is not uppercase")
 	}
 
-	return Result{
-		Score:       score,
-		MaxScore:    100,
-		Penalties:   penalties,
-		Suggestions: suggestions,
+	if e.Value == "" {
+		s -= 30
+		notes = append(notes, "empty value")
 	}
+
+	if m.IsSensitive(e.Key) && len(e.Value) < 8 {
+		s -= 25
+		notes = append(notes, "sensitive key has short value")
+	}
+
+	if strings.ContainsAny(e.Key, " \t") {
+		s -= 15
+		notes = append(notes, "key contains whitespace")
+	}
+
+	if len(e.Key) > 0 && unicode.IsDigit(rune(e.Key[0])) {
+		s -= 10
+		notes = append(notes, "key starts with digit")
+	}
+
+	if s < 0 {
+		s = 0
+	}
+	return Result{Key: e.Key, Score: s, Notes: notes}
 }
