@@ -16,4 +16,11 @@
 //		ExtraPatterns: []string{"token", "cert"},
 //	}
 //	redacted := redactor.Redact(entries, opts)
+//
+// Raw string redaction:
+//
+//	// RedactString replaces sensitive values found in a plain string,
+//	// which is useful for sanitising log output or error messages that
+//	// may inadvertently contain secret values.
+//	clean := redactor.RedactString(rawOutput, entries, redactor.Options{})
 package redactor
